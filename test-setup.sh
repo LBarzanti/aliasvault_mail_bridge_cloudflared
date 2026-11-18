@@ -8,10 +8,14 @@
 #   sudo ./scripts/test-setup.sh --retry       # + stop the bridge and check the Worker's retry
 #   ./scripts/test-setup.sh --help
 #
-# Run it ON THE SERVER that runs the bridge. It needs root (or a user that can
-# read the secret file, use journalctl and stop/start the service). The script
-# first looks for WEBHOOK_SECRET in /etc/mail-bridge.env; if that file cannot be
-# used, it asks for an alternative secret-file path.
+# Run it ON THE SERVER that runs the bridge, preferably with sudo. It needs
+# permission to read the secret file, use journalctl, stop/start the service,
+# and inspect the AliasVault container. Docker inspection is explicitly run
+# through sudo. The script first looks for WEBHOOK_SECRET in /etc/mail-bridge.env;
+# if that file cannot be used, it asks for an alternative secret-file path.
+# Credential files may use WEBHOOK_SECRET=value, WEBHOOK_SECRET = value,
+# export WEBHOOK_SECRET=value, or a single/double-quoted value. If the current
+# user cannot read the file, the script retries the read with sudo.
 #
 # Tests (bottom-up, like the README):
 #   1. AliasVault answers on its SMTP port (loopback)
@@ -140,9 +144,63 @@ command -v wget >/dev/null 2>&1 || die "wget is required (install it with your p
 
 SECRET=""
 read_secret_file() {
-  local file=$1
-  [[ -r "$file" ]] || return 1
-  SECRET=$(sed -n 's/^WEBHOOK_SECRET=//p' "$file")
+  # Read a conventional env/credentials file without sourcing it (sourcing an
+  # arbitrary file would execute its contents as shell code). Accept these
+  # common forms:
+  #   WEBHOOK_SECRET=value
+  #   WEBHOOK_SECRET = value
+  #   export WEBHOOK_SECRET=value
+  #   WEBHOOK_SECRET="value" / WEBHOOK_SECRET='value'
+  local file=$1 content line key value first last
+
+  [[ -f "$file" ]] || return 1
+  if [[ -r "$file" ]]; then
+    content=$(cat -- "$file") || return 1
+  elif command -v sudo >/dev/null 2>&1; then
+    # A non-root invocation may not be able to read a root-owned credential
+    # file; retry the read with sudo rather than immediately rejecting it.
+    content=$(sudo cat -- "$file" 2>/dev/null) || return 1
+  else
+    return 1
+  fi
+  SECRET=""
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Handle CRLF files and leading whitespace.
+    line=${line%$'\r'}
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
+
+    # Allow an optional shell-style export prefix.
+    if [[ "$line" == export[[:space:]]* ]]; then
+      line=${line#export}
+      line="${line#"${line%%[![:space:]]*}"}"
+    fi
+
+    [[ "$line" == *=* ]] || continue
+    key=${line%%=*}
+    value=${line#*=}
+    # Trim whitespace around the variable name and value.
+    key="${key%"${key##*[![:space:]]}"}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    [[ "$key" == "WEBHOOK_SECRET" ]] || continue
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+
+    # Remove one matching pair of surrounding quotes, if present.
+    if [[ ${#value} -ge 2 ]]; then
+      first=${value:0:1}
+      last=${value: -1}
+      if [[ ( "$first" == '"' && "$last" == '"' ) || ( "$first" == "'" && "$last" == "'" ) ]]; then
+        value=${value:1:${#value}-2}
+      fi
+    fi
+
+    # Keep the last WEBHOOK_SECRET assignment, matching the usual env-file
+    # convention. An empty final value is considered missing.
+    SECRET=$value
+  done <<< "$content"
+
   [[ -n "$SECRET" ]]
 }
 
@@ -151,13 +209,13 @@ read_secret_file() {
 # from the process environment is deliberately not used as a substitute.
 if ! read_secret_file "$SECRET_FILE"; then
   if [[ -r /dev/tty ]]; then
-    printf 'Cannot read %s or find WEBHOOK_SECRET in it.\n' "$SECRET_FILE" > /dev/tty
+    printf 'Cannot read WEBHOOK_SECRET from %s (file missing, unreadable, or variable absent/empty).\n' "$SECRET_FILE" > /dev/tty
     printf 'Alternative secret file path: ' > /dev/tty
     IFS= read -r SECRET_FILE < /dev/tty || die "could not read alternative SECRET_FILE path"
     [[ -n "$SECRET_FILE" ]] || die "SECRET_FILE path cannot be empty"
-    read_secret_file "$SECRET_FILE" || die "cannot read WEBHOOK_SECRET from $SECRET_FILE"
+    read_secret_file "$SECRET_FILE" || die "cannot read a non-empty WEBHOOK_SECRET from $SECRET_FILE; expected WEBHOOK_SECRET=value"
   else
-    die "cannot read WEBHOOK_SECRET from $SECRET_FILE; set SECRET_FILE to a readable file containing WEBHOOK_SECRET=..."
+    die "cannot read a non-empty WEBHOOK_SECRET from $SECRET_FILE; set SECRET_FILE to a readable file containing WEBHOOK_SECRET=value"
   fi
 fi
 
@@ -253,11 +311,14 @@ else
 fi
 
 if [[ -n "$CONTAINER" ]] && command -v docker >/dev/null 2>&1; then
-  if [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" == "true" ]]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    fail "sudo is required to run the Docker container check"
+    info "hint: install sudo and run this script with: sudo ./scripts/test-setup.sh"
+  elif [[ "$(sudo docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" == "true" ]]; then
     pass "container $CONTAINER is running"
   else
-    fail "container $CONTAINER is not running (or has another name)"
-    info "hint: docker compose ps ; set CONTAINER=<name> if it is called differently"
+    fail "container $CONTAINER is not running, has another name, or sudo could not access Docker"
+    info "hint: sudo docker compose ps ; set CONTAINER=<name> if it is called differently"
   fi
 else
   skip "container check (CONTAINER empty or docker not available)"
