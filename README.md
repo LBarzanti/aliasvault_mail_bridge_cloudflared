@@ -11,7 +11,7 @@ Receive email for your [AliasVault](https://docs.aliasvault.com/) aliases when y
 3. [Prerequisites (you must already have these)](#3-prerequisites-you-must-already-have-these)
 4. [Placeholders used in this guide](#4-placeholders-used-in-this-guide)
 5. [Setup, step by step](#5-setup-step-by-step)
-6. [Testing, bottom-up](#6-testing-bottom-up)
+6. [Testing, bottom-up](#6-testing)
 7. [What happens when something fails](#7-what-happens-when-something-fails)
 8. [Maintenance](#8-maintenance)
 9. [Privacy and trade-offs](#9-privacy-and-trade-offs)
