@@ -1,0 +1,19 @@
+[Unit]
+Description=Mail bridge Cloudflare Email Worker -> AliasVault
+After=network-online.target docker.service
+
+[Service]
+ExecStart=/usr/local/bin/mail-bridge
+EnvironmentFile=/etc/mail-bridge.env
+# Use 127.0.0.1:8087 if cloudflared runs natively on the host.
+# If cloudflared runs in Docker, bind to the host's LAN IP instead.
+Environment=LISTEN=127.0.0.1:8087
+Environment=SMTP_ADDR=127.0.0.1:2525
+Restart=always
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

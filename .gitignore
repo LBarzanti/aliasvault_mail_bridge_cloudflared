@@ -1,0 +1,11 @@
+# Rust
+bridge/target/
+
+# Node / Wrangler
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+
+# Real configuration and secrets: never commit these
+worker/wrangler.toml
+*.env

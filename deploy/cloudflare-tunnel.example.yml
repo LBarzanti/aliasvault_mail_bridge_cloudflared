@@ -1,0 +1,10 @@
+# Example only: adapt to your own setup.
+tunnel: <your_tunnel_id>
+credential-file: /home/<your_user>/.cloudflared/<your_credential_file>
+
+ingress:
+  - hostname: vault.example.com
+    service: http://localhost:8085
+  - hostname: inbound.example.com
+    service: http://localhost:8087
+  - service: http_status:404

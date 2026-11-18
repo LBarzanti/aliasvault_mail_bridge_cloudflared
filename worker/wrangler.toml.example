@@ -1,0 +1,31 @@
+# Copy to wrangler.toml and fill in the placeholders.
+# Do NOT put WEBHOOK_SECRET here: use "npx wrangler secret put WEBHOOK_SECRET".
+name = "aliasvault-mail"
+main = "src/index.js"
+compatibility_date = "2026-11-17"
+
+[vars]
+INBOUND_URL = "https://inbound.example.com/"
+
+[[kv_namespaces]]
+binding = "MAIL_KV"
+id = "<KV_NAMESPACE_ID>"
+
+[[queues.producers]]
+queue = "aliasvault-mail-retry"
+binding = "MAIL_QUEUE"
+
+[[queues.consumers]]
+queue = "aliasvault-mail-retry"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 6
+max_concurrency = 2
+dead_letter_queue = "aliasvault-mail-retry-dlq"
+
+# The DLQ consumer only logs and acknowledges; the KV value stays
+# available until it expires (7 days).
+[[queues.consumers]]
+queue = "aliasvault-mail-retry-dlq"
+max_batch_size = 1
+max_concurrency = 1

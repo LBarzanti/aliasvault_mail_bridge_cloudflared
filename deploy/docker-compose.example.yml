@@ -1,0 +1,26 @@
+# Example only: adapt to your own AliasVault all-in-one compose file.
+# The three changes that matter are marked with "# <-- needed".
+services:
+  aliasvault:
+    image: ghcr.io/aliasvault/aliasvault:latest
+    container_name: aliasvault
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:8085:80"
+      - "127.0.0.1:2525:25"        # <-- needed: SMTP reachable only from the host (loopback)
+
+    volumes:
+      - ./database:/database
+      - ./logs:/logs
+      - ./secrets:/secrets
+      - ./certificates:/certificates
+
+    environment:
+      HOSTNAME: "vault.example.com"
+      PUBLIC_REGISTRATION_ENABLED: "true"
+      IP_LOGGING_ENABLED: "true"
+      FORCE_HTTPS_REDIRECT: "false"
+      SUPPORT_EMAIL: "true"                # <-- needed
+      PRIVATE_EMAIL_DOMAINS: "example.com" # <-- needed
+      SMTP_TLS_ENABLED: "false"
